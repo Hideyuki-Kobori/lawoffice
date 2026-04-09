@@ -72,6 +72,15 @@ def extract_text_from_docx(file_content):
     except:
         return ""
 
+def create_word_document(text):
+    doc = Document()
+    for line in text.split("\n"):
+        doc.add_paragraph(line)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
 def search_similar_folders(access_token, case_type, limit=20):
     all_items = get_folder_items(access_token, "278953491818")
     matched = [i for i in all_items if i["type"] == "folder" and case_type in i["name"]]
@@ -109,6 +118,7 @@ def find_best_document(access_token, folders, case_summary, doc_type, ai_client)
                     "folder_name": folder["name"],
                     "file_id": matched_files[0]["id"],
                     "file_name": matched_files[0]["name"],
+                    "file_content": file_content,
                     "text": text[:500]
                 })
     if not candidates:
@@ -175,6 +185,12 @@ else:
                     st.error("Wordファイルが見つかりませんでした。")
                 else:
                     st.success("選択された書類: " + best["folder_name"] + " / " + best["file_name"])
+                    st.download_button(
+                        label="参考にした書類をダウンロード",
+                        data=best["file_content"],
+                        file_name=best["file_name"],
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
                     with st.spinner("新しい書類を生成中..."):
                         file_content = download_file(access_token, best["file_id"])
                         original_text = extract_text_from_docx(file_content)
@@ -187,11 +203,12 @@ else:
                             }]
                         )
                         result = message.content[0].text
+                        word_data = create_word_document(result)
                         st.header("生成された書類")
                         st.text_area("内容", result, height=500)
                         st.download_button(
-                            label="テキストとしてダウンロード",
-                            data=result,
-                            file_name="新規書類.txt",
-                            mime="text/plain"
+                            label="Word文書としてダウンロード",
+                            data=word_data,
+                            file_name=doc_type + "_新規.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         )
