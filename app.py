@@ -184,13 +184,6 @@ else:
                 if not best:
                     st.error("Wordファイルが見つかりませんでした。")
                 else:
-                    st.success("選択された書類: " + best["folder_name"] + " / " + best["file_name"])
-                    st.download_button(
-                        label="参考にした書類をダウンロード",
-                        data=best["file_content"],
-                        file_name=best["file_name"],
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
                     with st.spinner("新しい書類を生成中..."):
                         file_content = download_file(access_token, best["file_id"])
                         original_text = extract_text_from_docx(file_content)
@@ -204,11 +197,29 @@ else:
                         )
                         result = message.content[0].text
                         word_data = create_word_document(result)
-                        st.header("生成された書類")
-                        st.text_area("内容", result, height=500)
-                        st.download_button(
-                            label="Word文書としてダウンロード",
-                            data=word_data,
-                            file_name=doc_type + "_新規.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        )
+                        st.session_state["result"] = result
+                        st.session_state["word_data"] = word_data
+                        st.session_state["best"] = best
+
+    if "result" in st.session_state:
+        best = st.session_state["best"]
+        result = st.session_state["result"]
+        word_data = st.session_state["word_data"]
+        st.success("選択された書類: " + best["folder_name"] + " / " + best["file_name"])
+        st.header("生成された書類")
+        st.text_area("内容", result, height=500)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                label="参考にした書類をダウンロード",
+                data=best["file_content"],
+                file_name=best["file_name"],
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        with col2:
+            st.download_button(
+                label="Word文書としてダウンロード",
+                data=word_data,
+                file_name=doc_type + "_新規.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
