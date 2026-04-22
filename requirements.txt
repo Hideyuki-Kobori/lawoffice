@@ -3,3 +3,5 @@ anthropic
 requests
 python-docx
 python-dotenv
+supabase
+pytz
