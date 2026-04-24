@@ -19,7 +19,7 @@ def get_box_auth_url():
         "https://account.box.com/api/oauth2/authorize"
         "?client_id=" + BOX_CLIENT_ID +
         "&response_type=code"
-        "&redirect_uri=https://hideyuki-kobori-lawoffice-app-dcm67o.streamlit.app"
+        "&redirect_uri=https://lawoffice.streamlit.app"
     )
     return auth_url
 
