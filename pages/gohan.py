@@ -3,18 +3,6 @@
 --------------------
 依存ライブラリ: supabase, pytz
 Streamlit Secrets に SUPABASE_URL と SUPABASE_KEY を設定してください。
-
-Supabase で実行する SQL:
-    CREATE TABLE reservations (
-        id          BIGSERIAL PRIMARY KEY,
-        date        DATE    NOT NULL,
-        user_name   TEXT    NOT NULL,
-        wants_rice  BOOLEAN NOT NULL DEFAULT FALSE,
-        updated_at  TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE (date, user_name)
-    );
-    ALTER TABLE reservations ENABLE ROW LEVEL SECURITY;
-    CREATE POLICY "allow_all" ON reservations FOR ALL USING (true) WITH CHECK (true);
 """
 
 import streamlit as st
@@ -116,10 +104,50 @@ def get_date_data(df: pd.DataFrame, date_str: str) -> dict[str, bool]:
     sub = df[df["date"] == date_str]
     return {row["user_name"]: bool(row["wants_rice"]) for _, row in sub.iterrows()}
 
+def monthly_summary(df: pd.DataFrame, t: date) -> dict[str, pd.DataFrame]:
+    """
+    翌月1日以降に表示する月別集計を返す。
+    今月分は含めない（月末まで待つ）。
+    戻り値: {"2025年4月": DataFrame(user_name, count), ...}
+    """
+    if df.empty:
+        return {}
+
+    # 今月の初日
+    this_month_start = t.replace(day=1)
+
+    past = df[df["date"] < this_month_start.isoformat()].copy()
+    if past.empty:
+        return {}
+
+    past["ym"] = past["date"].str[:7]  # "2025-04"
+    result = {}
+
+    for ym in sorted(past["ym"].unique(), reverse=True):
+        sub = past[past["ym"] == ym]
+        counts = (
+            sub[sub["wants_rice"]]
+            .groupby("user_name")
+            .size()
+            .reset_index(name="回数")
+            .sort_values("回数", ascending=False)
+            .reset_index(drop=True)
+        )
+        counts.index += 1  # 1始まり
+        y, m = ym.split("-")
+        label = f"{y}年{int(m)}月"
+        result[label] = counts
+
+    return result
+
+# ─── セッション初期化 ────────────────────────────────────────────────────────
+
 if "my_name" not in st.session_state:
     st.session_state.my_name = ""
 if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = False
+
+# ─── サイドバー ────────────────────────────────────────────────────────────────
 
 with st.sidebar:
     st.header("👤 名前の登録・変更")
@@ -181,6 +209,8 @@ with st.sidebar:
     st.divider()
     st.caption("名前はこのブラウザ・端末ごとに保存されます。\nスマホからアクセスする場合は再度登録してください。")
 
+# ─── メイン ────────────────────────────────────────────────────────────────────
+
 st.title("🍚 昼食ご飯予約")
 
 my_name: str = st.session_state.my_name
@@ -191,17 +221,19 @@ if not my_name:
 
 st.caption(f"登録名：**{my_name}**　／　自分の行のチェックボックスで登録・変更できます")
 
-df = load()
+df   = load()
+t    = today()
 all_users: list[str] = sorted(
     set((df["user_name"].tolist() if not df.empty else []) + [my_name])
 )
 
-tab_upcoming, tab_past = st.tabs(
-    ["📅 今後の予約（今日 ＋ 7日）", "📂 過去の記録"]
+tab_upcoming, tab_past, tab_monthly = st.tabs(
+    ["📅 今後の予約（今日 ＋ 7日）", "📂 過去の記録", "📊 月別集計"]
 )
 
+# ── 今後の予約 ─────────────────────────────────────────────────────────────────
+
 with tab_upcoming:
-    t = today()
     for d in upcoming():
         date_str = d.isoformat()
         is_today = d == t
@@ -244,11 +276,12 @@ with tab_upcoming:
                         )
         st.write("")
 
+# ── 過去の記録 ─────────────────────────────────────────────────────────────────
+
 with tab_past:
     if df.empty:
         st.info("過去のデータはまだありません")
     else:
-        t = today()
         past_dates: list[date] = sorted(
             [
                 date.fromisoformat(s)
@@ -278,3 +311,30 @@ with tab_past:
                             f'<span style="color:{color}">{icon}</span>&nbsp;&nbsp;{user}',
                             unsafe_allow_html=True,
                         )
+
+# ── 月別集計 ──────────────────────────────────────────────────────────────────
+
+with tab_monthly:
+    summary = monthly_summary(df, t)
+
+    if not summary:
+        st.info(
+            f"月別集計は翌月1日以降に表示されます。\n\n"
+            f"（現在 {t.year}年{t.month}月 ／ "
+            f"{t.year}年{t.month}月分は {t.year if t.month < 12 else t.year+1}年"
+            f"{t.month+1 if t.month < 12 else 1}月1日以降に集計されます）"
+        )
+    else:
+        st.caption("先月以前のご飯あり回数の集計です")
+        for label, counts in summary.items():
+            st.subheader(f"📅 {label}")
+            if counts.empty:
+                st.write("ご飯ありの記録がありません")
+            else:
+                counts.columns = ["名前", "ご飯あり（回）"]
+                st.dataframe(
+                    counts,
+                    use_container_width=True,
+                    hide_index=False,
+                )
+            st.divider()
